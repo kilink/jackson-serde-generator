@@ -1,0 +1,15 @@
+repositories {
+  jcenter()
+  mavenCentral()
+}
+
+apply plugin: "java"
+
+dependencies {
+  compile "com.fasterxml.jackson.core:jackson-annotations:2.9.+"
+  compile "com.fasterxml.jackson.core:jackson-databind:2.9.+"
+  compile "com.squareup:javapoet:1.11.+"
+
+  testCompile "junit:junit:4.+"
+  testCompile "com.google.testing.compile:compile-testing:0.+"
+}
