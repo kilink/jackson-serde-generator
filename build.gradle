@@ -12,5 +12,6 @@ dependencies {
   implementation "com.squareup:javapoet:1.12.+"
 
   testImplementation "junit:junit:4.+"
+  testImplementation "com.google.guava:guava:29.0-jre"
   testImplementation "com.google.testing.compile:compile-testing:0.+"
 }
