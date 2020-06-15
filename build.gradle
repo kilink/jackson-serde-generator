@@ -4,12 +4,13 @@ repositories {
 }
 
 apply plugin: "java"
+apply plugin: "java-library"
 
 dependencies {
-  compile "com.fasterxml.jackson.core:jackson-annotations:2.9.+"
-  compile "com.fasterxml.jackson.core:jackson-databind:2.9.+"
-  compile "com.squareup:javapoet:1.11.+"
+  api "com.fasterxml.jackson.core:jackson-annotations:2.10.+"
+  api "com.fasterxml.jackson.core:jackson-databind:2.10.+"
+  implementation "com.squareup:javapoet:1.12.+"
 
-  testCompile "junit:junit:4.+"
-  testCompile "com.google.testing.compile:compile-testing:0.+"
+  testImplementation "junit:junit:4.+"
+  testImplementation "com.google.testing.compile:compile-testing:0.+"
 }
