@@ -8,20 +8,20 @@ import com.fasterxml.jackson.databind.introspect.BasicBeanDescription;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import com.fasterxml.jackson.databind.type.TypeFactory;
+import com.fasterxml.jackson.databind.util.EnumValues;
 import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeSpec;
 
 import javax.lang.model.element.Modifier;
+import javax.tools.JavaFileObject;
 import java.io.IOException;
 
 public class Util {
-
-    public static String generateSerializer(Class<?> clazz, SerializationConfig serializationConfig) {
-        String serializerName = clazz.getSimpleName() + "Serializer";
-
+    public static JavaFileObject generateSerializer(String serializerName, Class<?> clazz, SerializationConfig serializationConfig) {
         BasicBeanDescription beanDescription = serializationConfig.introspect(
                 TypeFactory.defaultInstance().constructType(clazz));
 
@@ -36,7 +36,7 @@ public class Util {
 
         for (BeanPropertyDefinition prop : beanDescription.findProperties()) {
             serializeMethod.addStatement("gen.writeFieldName($S)", prop.getName());
-            writeValue(prop.getPrimaryType(), CodeBlock.of("value.$L()", prop.getGetter().getName()), serializeMethod);
+            writeValue(serializationConfig, prop.getPrimaryType(), CodeBlock.of("value.$L()", prop.getGetter().getName()), serializeMethod);
         }
 
         serializeMethod.addStatement("gen.writeEndObject()");
@@ -51,10 +51,13 @@ public class Util {
                 .addMethod(serializeMethod.build())
                 .build();
 
-        return serializerSpec.toString();
+        String packageName = clazz.getPackage().getName();
+        return JavaFile.builder(packageName, serializerSpec)
+                .build()
+                .toJavaFileObject();
     }
 
-    private static void writeValue(JavaType type, CodeBlock codeBlock, MethodSpec.Builder methodSpec) {
+    private static void writeValue(SerializationConfig serializationConfig, JavaType type, CodeBlock codeBlock, MethodSpec.Builder methodSpec) {
         if (type.isTypeOrSubTypeOf(String.class)) {
             methodSpec.addStatement("gen.writeString($L)", codeBlock);
         } else if (isNumber(type)) {
@@ -62,18 +65,31 @@ public class Util {
         } else if (type.getRawClass().equals(Boolean.class) || type.getRawClass().equals(boolean.class)) {
             methodSpec.addStatement("gen.writeBoolean($L)", codeBlock);
         } else if (type.isCollectionLikeType()) {
-
             methodSpec.addStatement("gen.writeStartArray()");
 
             methodSpec.beginControlFlow("for ($T item : $L)",
                     type.getContentType().getRawClass(),
                     codeBlock);
 
-            writeValue(type.getContentType(), CodeBlock.of("item"), methodSpec);
+            writeValue(serializationConfig, type.getContentType(), CodeBlock.of("item"), methodSpec);
 
             methodSpec.endControlFlow();
             methodSpec.addStatement("gen.writeEndArray()");
+        } else if (type.isEnumType()) {
+            @SuppressWarnings("unchecked")
+            Class<Enum<?>> enumClass = (Class<Enum<?>>) type.getRawClass();
+            EnumValues enumValues = EnumValues.construct(serializationConfig, enumClass);
 
+            methodSpec.beginControlFlow("switch ($L)", codeBlock);
+            for (Enum<?> enumValue : enumValues.enums()) {
+                methodSpec.addCode("case $L:\n", enumValue);
+                methodSpec.addStatement("$>gen.writeString($S)", enumValues.serializedValueFor(enumValue));
+                methodSpec.addStatement("break$<");
+            }
+
+            methodSpec.addCode("default:\n");
+            methodSpec.addStatement("$>gen.writeNull()$<");
+            methodSpec.endControlFlow();
         } else {
             methodSpec.addStatement("gen.writeObject($L)", codeBlock);
         }

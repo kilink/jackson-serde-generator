@@ -22,6 +22,7 @@ public final class TestUtils {
 
             @SuppressWarnings("unchecked")
             Class<T> klazz = (Class<T>) defineClass(null, bytes, 0, bytes.length);
+
             return klazz;
         }
     }
@@ -29,8 +30,19 @@ public final class TestUtils {
     private static final FileObjectClassLoader classLoader = new FileObjectClassLoader();
 
     public static <T> Class<T> loadClass(JavaFileObject classFile) {
-        checkNotNull(classFile);
+        checkNotNull(classFile, "classFile = null");
         checkArgument(classFile.getKind() == JavaFileObject.Kind.CLASS);
         return classLoader.defineClassFromFileObject(classFile);
+    }
+
+    public static <T> Class<T> loadClass(String className) {
+        checkNotNull(className, "className == null");
+        try {
+            @SuppressWarnings("unchecked")
+            Class<T> klazz = (Class<T>) classLoader.loadClass(className);
+            return klazz;
+        } catch (ClassNotFoundException exc) {
+            throw new RuntimeException(exc);
+        }
     }
 }
