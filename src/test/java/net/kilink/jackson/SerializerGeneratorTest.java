@@ -5,7 +5,6 @@ import static com.google.testing.compile.Compiler.javac;
 import static net.kilink.jackson.TestUtils.loadClass;
 import static org.junit.Assert.assertEquals;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializer;
@@ -15,7 +14,6 @@ import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.testing.compile.Compilation;
-import com.squareup.javapoet.NameAllocator;
 import org.junit.Test;
 
 import javax.tools.JavaFileObject;
@@ -24,86 +22,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-public class SerializerTest {
-
-    private static final NameAllocator nameAllocator = new NameAllocator();
-
-    public enum State {
-        @JsonProperty("In Progress")
-        IN_PROGRESS,
-        @JsonProperty("Finished")
-        FINISHED,
-        @JsonProperty("Failed")
-        FAILED
-    }
-
-    public static final class Foo {
-
-        private String bar;
-        private int baz;
-        private List<String> things;
-        private Map<String, String> otherThings;
-        private boolean enabled = false;
-        private State state = null;
-
-        public Foo() { }
-
-        @JsonProperty("renamedBar")
-        public String getBar() {
-            return bar;
-        }
-
-        public void setBar(String bar) {
-            this.bar = bar;
-        }
-
-        public int getBaz() {
-            return baz;
-        }
-
-        public void setBaz(int baz) {
-            this.baz = baz;
-        }
-
-        public List<String> getThings() {
-            return things;
-        }
-
-        public void setThings(List<String> things) {
-            this.things = things;
-        }
-
-        public Map<String, String> getOtherThings() {
-            return otherThings;
-        }
-
-        public void setOtherThings(Map<String, String> otherThings) {
-            this.otherThings = otherThings;
-        }
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        public State getState() {
-            return state;
-        }
-
-        public void setState(State state) {
-            this.state = state;
-        }
-    }
+public class SerializerGeneratorTest {
 
     @Test
     public void testSerializerCompilation() {
-        ObjectMapper mapper = new ObjectMapper();
-
-        String serializerName = getSerializerName(Foo.class);
-        JavaFileObject sourceFile = Util.generateSerializer(serializerName, Foo.class, mapper.getSerializationConfig());
+        SerializerGenerator<Foo> generator = SerializerGenerator.builderFor(Foo.class).build();
+        JavaFileObject sourceFile = generator.generateSerializer();
 
         Compilation result = javac().compile(sourceFile);
         assertThat(result).succeededWithoutWarnings();
@@ -111,11 +35,9 @@ public class SerializerTest {
 
     @Test
     public void testGeneratedSerializer() throws Exception {
+        SerializerGenerator<Foo> generator = SerializerGenerator.builderFor(Foo.class).build();
         ObjectMapper mapper = new ObjectMapper();
-
-        String serializerName = getSerializerName(Foo.class);
-        String fullyQualifiedName = Foo.class.getPackage().getName() + "." + serializerName;
-        JavaFileObject sourceFile = Util.generateSerializer(serializerName, Foo.class, mapper.getSerializationConfig());
+        JavaFileObject sourceFile = generator.generateSerializer();
 
         Compilation result = javac().compile(sourceFile);
         assertThat(result).succeeded();
@@ -124,7 +46,7 @@ public class SerializerTest {
             loadClass(classFile);
         }
 
-        Class<JsonSerializer<Foo>> serializerClass = loadClass(fullyQualifiedName);
+        Class<JsonSerializer<Foo>> serializerClass = loadClass("net.kilink.jackson.FooSerializer");
 
         JsonSerializer<Foo> serializer = serializerClass.newInstance();
         SimpleModule module = new SimpleModule();
@@ -143,7 +65,7 @@ public class SerializerTest {
         foo.setEnabled(true);
         foo.setThings(ImmutableList.of("foo", "bar" , "baz"));
         foo.setOtherThings(ImmutableMap.of("key", "value"));
-        foo.setState(State.IN_PROGRESS);
+        foo.setState(Foo.State.IN_PROGRESS);
 
         String serializedJson = mapper.writeValueAsString(foo);
         JsonNode jsonNode = mapper.readTree(serializedJson);
@@ -160,9 +82,5 @@ public class SerializerTest {
 
         Map<String, String> otherThings = mapper.convertValue(jsonNode.at("/otherThings"), new TypeReference<Map<String, String>>() {});
         assertEquals(foo.getOtherThings(), otherThings);
-    }
-
-    private String getSerializerName(Class<?> klazz) {
-        return nameAllocator.newName(klazz.getSimpleName() + "Serializer");
     }
 }

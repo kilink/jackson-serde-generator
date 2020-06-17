@@ -2,6 +2,7 @@ package net.kilink.jackson;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationConfig;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.introspect.BasicBeanDescription;
@@ -19,11 +20,29 @@ import com.squareup.javapoet.TypeSpec;
 import javax.lang.model.element.Modifier;
 import javax.tools.JavaFileObject;
 import java.io.IOException;
+import java.util.Objects;
 
-public class Util {
-    public static JavaFileObject generateSerializer(String serializerName, Class<?> clazz, SerializationConfig serializationConfig) {
+public final class SerializerGenerator<T> {
+
+    private final Class<T> clazz;
+    private final SerializationConfig serializationConfig;
+    private final String packageName;
+    private final String serializerName;
+
+    private SerializerGenerator(Builder<T> builder) {
+        this.clazz = builder.clazz;
+        this.serializationConfig = builder.serializationConfig;
+        this.packageName = builder.packageName;
+        this.serializerName = builder.serializerName;
+    }
+
+    public static <T> Builder<T> builderFor(Class<T> klazz) {
+        return new Builder<>(klazz);
+    }
+
+    public JavaFileObject generateSerializer() {
         BasicBeanDescription beanDescription = serializationConfig.introspect(
-                TypeFactory.defaultInstance().constructType(clazz));
+                serializationConfig.getTypeFactory().constructType(clazz));
 
         MethodSpec.Builder serializeMethod = MethodSpec.methodBuilder("serialize")
                 .addAnnotation(Override.class)
@@ -103,5 +122,45 @@ public class Util {
                         type.getRawClass().equals(short.class) ||
                         type.getRawClass().equals(double.class) ||
                         type.getRawClass().equals(float.class));
+    }
+
+    public static final class Builder<T> {
+
+        private final Class<T> clazz;
+        private SerializationConfig serializationConfig;
+        private String packageName;
+        private String serializerName;
+
+        private Builder(Class<T> clazz) {
+            this.clazz = Objects.requireNonNull(clazz);
+        }
+
+        public Builder<T> serializationConfig(SerializationConfig serializationConfig) {
+            this.serializationConfig = serializationConfig;
+            return this;
+        }
+
+        public Builder<T> packageName(String packageName) {
+            this.packageName = packageName;
+            return this;
+        }
+
+        public Builder<T> serializerName(String serializerName) {
+            this.serializerName = serializerName;
+            return this;
+        }
+
+        public SerializerGenerator<T> build() {
+            if (serializationConfig == null) {
+                serializationConfig = new ObjectMapper().getSerializationConfig();
+            }
+            if (packageName == null) {
+                packageName = clazz.getPackage().getName();
+            }
+            if (serializerName == null) {
+                serializerName = clazz.getSimpleName() + "Serializer";
+            }
+            return new SerializerGenerator<>(this);
+        }
     }
 }
