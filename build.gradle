@@ -1,17 +1,28 @@
-repositories {
-  jcenter()
-  mavenCentral()
+plugins {
+  id "java-library"
 }
 
-apply plugin: "java"
-apply plugin: "java-library"
+repositories {
+  jcenter()
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
 
 dependencies {
+  annotationProcessor "com.google.auto.service:auto-service:1.+"
+
   api "com.fasterxml.jackson.core:jackson-annotations:2.10.+"
   api "com.fasterxml.jackson.core:jackson-databind:2.10.+"
-  implementation "com.squareup:javapoet:1.12.+"
 
+  implementation "com.google.auto:auto-common:0.+"
+  implementation "com.google.auto.service:auto-service-annotations:1.+"
+  implementation "com.squareup:javapoet:1.+"
+  implementation "org.checkerframework:javacutil:3.+"
+
+  if (org.gradle.internal.jvm.Jvm.current().toolsJar != null) {
+    testRuntimeOnly files(org.gradle.internal.jvm.Jvm.current().toolsJar)
+  }
   testImplementation "junit:junit:4.+"
-  testImplementation "com.google.guava:guava:29.0-jre"
   testImplementation "com.google.testing.compile:compile-testing:0.+"
 }

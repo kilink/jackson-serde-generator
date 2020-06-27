@@ -4,15 +4,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationConfig;
 import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
-import com.fasterxml.jackson.databind.introspect.AnnotatedConstructor;
-import com.fasterxml.jackson.databind.introspect.BasicBeanDescription;
-import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -21,216 +17,264 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.NameAllocator;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
+import org.checkerframework.javacutil.TypesUtils;
 
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
-import javax.tools.JavaFileObject;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import java.io.IOException;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-public final class DeserializerGenerator<T> {
+import static net.kilink.jackson.Utils.nameForSetter;
 
+public final class DeserializerGenerator {
+
+    private final TypeElement typeElement;
+    private final ClassName className;
+    private final ProcessingEnvironment processingEnv;
     private final DeserializationConfig deserializationConfig;
-    private final Class<T> clazz;
-    private final String packageName;
-    private final String deserializerClassName;
-    private final NameAllocator nameAllocator = new NameAllocator();
+    private final ClassName deserializerClassName;
+    private final NameAllocator names = new NameAllocator();
 
-    private DeserializerGenerator(Builder<T> builder) {
-        this.deserializationConfig = builder.deserializationConfig;
-        this.clazz = builder.klazz;
-        this.packageName = builder.packageName;
-        this.deserializerClassName = builder.deserializerClassName;
+    public DeserializerGenerator(TypeElement typeElement, ProcessingEnvironment processingEnv) {
+        this.typeElement = typeElement;
+        this.className = ClassName.get(typeElement);
+        this.processingEnv = processingEnv;
+        this.deserializationConfig = new ObjectMapper().getDeserializationConfig();
+        this.deserializerClassName = getDeserializerName(typeElement);
     }
 
-    public static <T> Builder<T> builderFor(Class<T> klazz) {
-        return new Builder<>(klazz);
+    private ClassName getDeserializerName(TypeElement element) {
+        AutoSerde anno = element.getAnnotation(AutoSerde.class);
+        String deserializerName = "";
+        String packageName = "";
+
+        if (anno != null) {
+            deserializerName = anno.deserializerName();
+            packageName = anno.packageName();
+        }
+        if (packageName.isEmpty()) {
+            packageName = elements().getPackageOf(element).getQualifiedName().toString();
+        }
+        if (deserializerName.isEmpty()) {
+            deserializerName = element.getSimpleName() + "Deserializer";
+        }
+        return ClassName.get(packageName, deserializerName);
     }
 
-    public JavaFileObject generateDeserializer() {
-        BasicBeanDescription beanDescription = deserializationConfig.introspect(
-                deserializationConfig.getTypeFactory().constructType(clazz));
-        JsonIgnoreProperties.Value ignoreProperties = deserializationConfig.getDefaultPropertyIgnorals(
-                beanDescription.getBeanClass(), beanDescription.getClassInfo());
+    public JavaFile generate() {
+        return JavaFile.builder(deserializerClassName.packageName(), buildClass()).build();
+    }
 
-        Set<String> ignoredPropertyNames = ignoreProperties.findIgnoredForDeserialization();
-        List<BeanPropertyDefinition> properties = beanDescription.findProperties().stream()
-                .filter(p -> !ignoredPropertyNames.contains(p.getName()))
-                .collect(Collectors.toList());
-
-        // Reserve our parameter names to avoid potential conflicts
-        nameAllocator.newName("p");
-        nameAllocator.newName("ctxt");
-
-        MethodSpec.Builder deserializeMethodSpec = MethodSpec.methodBuilder("deserialize")
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(clazz)
-                .addParameter(ParameterSpec.builder(JsonParser.class, "p").build())
-                .addParameter(ParameterSpec.builder(DeserializationContext.class, "ctxt").build())
-                .addException(IOException.class)
-                .addException(JsonProcessingException.class);
-
-        deserializeMethodSpec.beginControlFlow("if (!p.isExpectedStartObjectToken())");
-        deserializeMethodSpec.addStatement("ctxt.handleUnexpectedToken(getValueType(ctxt), p)");
-        deserializeMethodSpec.endControlFlow();
-        deserializeMethodSpec.addCode("\n");
-
-        AnnotatedConstructor defaultConstructor = beanDescription.findDefaultConstructor();
-        if (defaultConstructor == null) {
-            throw new RuntimeException("Currently only default constructors are supported");
-        }
-
-        for (BeanPropertyDefinition prop : properties) {
-            String name = nameAllocator.newName(prop.getName(), prop);
-            deserializeMethodSpec.addStatement("$T $L = null", getTypeName(prop), name);
-        }
-        deserializeMethodSpec.addCode("\n");
-
-        String tokenName = nameAllocator.newName("token");
-        deserializeMethodSpec.addStatement("$T $L = p.nextToken()", JsonToken.class, tokenName);
-        deserializeMethodSpec.beginControlFlow("while ($L != null)", tokenName);
-
-        deserializeMethodSpec.beginControlFlow("if (token == $T.$L)", JsonToken.class, JsonToken.FIELD_NAME);
-        deserializeMethodSpec.addStatement("p.nextValue()");
-        String fieldName = nameAllocator.newName("fieldName");
-        deserializeMethodSpec.addStatement("$T $L = p.currentName()", String.class, fieldName);
-        deserializeMethodSpec.beginControlFlow("switch ($L)", fieldName);
-
-        for (BeanPropertyDefinition prop : properties) {
-            deserializeMethodSpec.addCode("case $S:\n", prop.getName());
-
-            Class<?> propClass = prop.getRawPrimaryType();
-            final CodeBlock valueHandler;
-            if (propClass.isAssignableFrom(String.class)) {
-                valueHandler = CodeBlock.of("p.getText()");
-            } else if (propClass.isAssignableFrom(Integer.class) || propClass == int.class) {
-                valueHandler = CodeBlock.of("p.getIntValue()");
-            } else if (propClass.isAssignableFrom(Double.class) || propClass == double.class) {
-                valueHandler = CodeBlock.of("p.getDoubleValue()");
-            } else if (propClass.isAssignableFrom(Boolean.class) || propClass == boolean.class) {
-                valueHandler = CodeBlock.of("p.getBooleanValue()");
-            } else if (propClass.isAssignableFrom(List.class) || propClass.isAssignableFrom(Map.class)) {
-                TypeName typeRef = ParameterizedTypeName.get(ClassName.get(TypeReference.class), getTypeName(prop));
-                valueHandler = CodeBlock.of("p.readValueAs(new $T() {})", typeRef);
-            } else if (propClass.isEnum()) {
-                valueHandler = CodeBlock.of("$T.valueOf(p.getText())", propClass);
-            } else {
-                throw new RuntimeException("Handling of value type " + propClass + " not implemented");
-            }
-
-            deserializeMethodSpec.addCode("$>");
-            deserializeMethodSpec.addStatement("$L = $L", nameAllocator.get(prop), valueHandler);
-
-            deserializeMethodSpec.addStatement("break$<");
-        }
-
-        deserializeMethodSpec.addCode("default:\n$>");
-        deserializeMethodSpec.beginControlFlow("if (!(ignoreUnknown || ignored.contains($L)))", fieldName);
-        deserializeMethodSpec.addStatement("handleUnknownProperty(p, ctxt, $T.class, $L)", clazz, fieldName);
-        deserializeMethodSpec.endControlFlow();
-
-        deserializeMethodSpec.endControlFlow();
-        deserializeMethodSpec.endControlFlow();
-        deserializeMethodSpec.addStatement("$L = p.nextToken()", tokenName);
-        deserializeMethodSpec.endControlFlow();
-
-        String instanceName = nameAllocator.newName("obj");
-        deserializeMethodSpec.addStatement("$T $L = new $T()", clazz, instanceName, clazz);
-
-        for (BeanPropertyDefinition prop : properties) {
-            deserializeMethodSpec.addStatement("$L.$L($L)", instanceName, prop.getSetter().getName(), nameAllocator.get(prop));
-        }
-
-        deserializeMethodSpec.addStatement("return $L", instanceName);
-
-        TypeSpec.Builder deserializerClassSpec = TypeSpec.classBuilder(deserializerClassName)
-                .addModifiers(Modifier.PUBLIC)
-                .superclass(ParameterizedTypeName.get(StdDeserializer.class, clazz))
-                .addField(FieldSpec.builder(
-                        ParameterizedTypeName.get(Set.class, String.class),
-                        "ignored",
-                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("new $T()", ParameterizedTypeName.get(HashSet.class, String.class)).build())
+    private TypeSpec buildClass() {
+        TypeSpec.Builder classSpec = TypeSpec.classBuilder(deserializerClassName)
+                .addModifiers(Modifier.FINAL)
+                .superclass(ParameterizedTypeName.get(ClassName.get(StdDeserializer.class), className))
                 .addMethod(MethodSpec.constructorBuilder()
                         .addModifiers(Modifier.PUBLIC)
-                        .addStatement("super($T.class)", clazz)
-                        .build())
-                .addMethod(deserializeMethodSpec.build());
+                        .addStatement("super($T.class)", className)
+                        .build());
 
-        deserializerClassSpec.addField(
+        JsonIgnoreProperties.Value base = JsonIgnoreProperties.Value.forIgnoreUnknown(
+                deserializationConfig.isEnabled(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES));
+        JsonIgnoreProperties.Value ignoreProperties = JsonIgnoreProperties.Value.merge(base, getIgnoredProperties());
+        classSpec.addField(
                 FieldSpec.builder(boolean.class,
                         "ignoreUnknown",
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$L", ignoreProperties.getIgnoreUnknown()).build());
 
-        if (!ignoredPropertyNames.isEmpty()) {
-            CodeBlock.Builder staticInitializer = CodeBlock.builder();
-            for (String ignoredName : ignoreProperties.findIgnoredForDeserialization()) {
-                staticInitializer.addStatement("ignored.add($S)", ignoredName);
+        if (ignoreProperties.getIgnored().isEmpty()) {
+            classSpec.addField(FieldSpec.builder(
+                    ParameterizedTypeName.get(Set.class, String.class),
+                    "ignored",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$T.emptySet()", Collections.class).build());
+        } else if (ignoreProperties.getIgnored().size() == 1) {
+            String singleProperty = ignoreProperties.getIgnored().iterator().next();
+            classSpec.addField(FieldSpec.builder(
+                    ParameterizedTypeName.get(Set.class, String.class),
+                    "ignored",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$T.singleton($S)", Collections.class, singleProperty).build());
+        } else {
+            classSpec.addField(FieldSpec.builder(
+                    ParameterizedTypeName.get(Set.class, String.class),
+                    "ignored",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .build());
+            CodeBlock.Builder staticInitializer = CodeBlock.builder()
+                    .addStatement("$T _ignoredProps = new $T<>()", ParameterizedTypeName.get(Set.class, String.class), LinkedHashSet.class);
+            for (String propertyName : ignoreProperties.getIgnored()) {
+                staticInitializer.addStatement("_ignoredProps.add($S)", propertyName);
             }
-
-            deserializerClassSpec.addStaticBlock(staticInitializer.build());
+            staticInitializer.addStatement("ignored = $T.unmodifiableSet(_ignoredProps)", Collections.class);
+            classSpec.addStaticBlock(staticInitializer.build());
         }
 
-        JavaFile javaFile = JavaFile.builder(packageName, deserializerClassSpec.build())
-                .build();
-        return javaFile.toJavaFileObject();
+        classSpec.addMethod(buildDeserializeMethod());
+        return classSpec.build();
     }
 
-    private static TypeName getTypeName(BeanPropertyDefinition prop) {
-        if (prop.getPrimaryType().hasGenericTypes()) {
-            Class<?>[] genericTypeParams = prop.getPrimaryType().getBindings().getTypeParameters()
-                    .stream()
-                    .map(JavaType::getRawClass)
-                    .toArray(Class[]::new);
-            return ParameterizedTypeName.get(prop.getRawPrimaryType(), genericTypeParams);
+    private MethodSpec buildDeserializeMethod() {
+        names.newName("p");
+        names.newName("ctxt");
+
+        MethodSpec.Builder method = MethodSpec.methodBuilder("deserialize")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(className)
+                .addParameter(ParameterSpec.builder(JsonParser.class, "p").build())
+                .addParameter(ParameterSpec.builder(DeserializationContext.class, "ctxt").build())
+                .addException(IOException.class)
+                .addException(JsonProcessingException.class);
+
+        method.beginControlFlow("if (!p.isExpectedStartObjectToken())");
+        method.addStatement("ctxt.handleUnexpectedToken(getValueType(ctxt), p)");
+        method.endControlFlow();
+        method.addCode("\n");
+
+        ExecutableElement defaultConstructor = null;
+        for (Element el : typeElement.getEnclosedElements()) {
+            if (el.getKind() != ElementKind.CONSTRUCTOR) {
+                continue;
+            }
+            ExecutableElement constructor = (ExecutableElement) el;
+            if (constructor.isDefault() || constructor.getParameters().isEmpty()) {
+                defaultConstructor = constructor;
+                break;
+            }
         }
-        return TypeName.get(prop.getRawPrimaryType()).box();
+
+        if (defaultConstructor == null) {
+            throw new RuntimeException("Currently only default constructors are supported");
+        }
+
+        List<ExecutableElement> setters = new ArrayList<>();
+        for (Element el : typeElement.getEnclosedElements()) {
+            if (el.getKind() != ElementKind.METHOD) {
+                continue;
+            }
+            ExecutableElement setter = (ExecutableElement) el;
+            if (!(setter.getParameters().size() == 1 && setter.getReturnType().getKind() == TypeKind.VOID)) {
+                continue;
+            }
+            String setterName = setter.getSimpleName().toString();
+            if (!(setterName.startsWith("set") && setterName.length() > 3)) {
+                continue;
+            }
+            setters.add(setter);
+        }
+
+        String instanceName = names.newName("obj");
+        method.addStatement("$T $L = new $T()", className, instanceName, className);
+
+        String tokenName = names.newName("token");
+        method.addStatement("$T $L = p.nextToken()", JsonToken.class, tokenName);
+        method.beginControlFlow("while ($L != null)", tokenName);
+
+        method.beginControlFlow("if (token == $T.$L)", JsonToken.class, JsonToken.FIELD_NAME);
+        method.addStatement("p.nextValue()");
+        String fieldName = names.newName("fieldName");
+        method.addStatement("$T $L = p.currentName()", String.class, fieldName);
+
+        method.beginControlFlow("switch ($L)", fieldName);
+
+        for (ExecutableElement setter : setters) {
+            String propertyName = nameForSetter(setter);
+            method.addCode("case $S:\n$>", propertyName);
+            TypeMirror type = setter.getParameters().get(0).asType();
+            CodeBlock reader = valueHandler(type);
+            method.addStatement("$L.$L($L)", instanceName, setter.getSimpleName(), reader);
+
+            method.addStatement("break$<");
+        }
+
+        method.addCode("default:\n$>");
+        method.beginControlFlow("if (!(ignoreUnknown || ignored.contains($L)))", fieldName);
+        method.addStatement("handleUnknownProperty(p, ctxt, $T.class, $L)", typeElement, fieldName);
+        method.endControlFlow();
+
+        method.endControlFlow();
+        method.endControlFlow();
+        method.addStatement("$L = p.nextToken()", tokenName);
+        method.endControlFlow();
+
+        method.addStatement("return $L", instanceName);
+
+        return method.build();
     }
 
-    public static final class Builder<T> {
-
-        private DeserializationConfig deserializationConfig = null;
-        private final Class<T> klazz;
-        private String packageName = null;
-        private String deserializerClassName = null;
-
-        public Builder(Class<T> klazz) {
-            this.klazz = Objects.requireNonNull(klazz);
-        }
-
-        public Builder<T> deserializationConfig(DeserializationConfig deserializationConfig) {
-            this.deserializationConfig = deserializationConfig;
-            return this;
-        }
-
-        public Builder<T> packageName(String packageName) {
-            this.packageName = packageName;
-            return this;
-        }
-
-        public Builder<T> deserializerClassName(String deserializerClassName) {
-            this.deserializerClassName = deserializerClassName;
-            return this;
-        }
-
-        public DeserializerGenerator<T> build() {
-            if (deserializationConfig == null) {
-                deserializationConfig = new ObjectMapper().getDeserializationConfig();
+    private CodeBlock valueHandler(TypeMirror type) {
+        if (TypesUtils.isPrimitive(type) || TypesUtils.isBoxedPrimitive(type)) {
+            TypeKind kind = TypesUtils.isBoxedPrimitive(type) ? types().unboxedType(type).getKind() : type.getKind();
+            switch (kind) {
+                case BOOLEAN:
+                    return CodeBlock.of("p.getBooleanValue()");
+                case BYTE:
+                    return CodeBlock.of("p.getByteValue()");
+                case SHORT:
+                    return CodeBlock.of("p.getShortValue()");
+                case INT:
+                    return CodeBlock.of("p.getIntValue()");
+                case LONG:
+                    return CodeBlock.of("p.getLongValue()");
+                case CHAR:
+                    return CodeBlock.of("p.getCharValue()");
+                case FLOAT:
+                    return CodeBlock.of("p.getFloatValue()");
+                case DOUBLE:
+                    return CodeBlock.of("p.getDoubleValue()");
+                default:
+                    throw new AssertionError("Encountered unknown primitive type: " + type.getKind());
             }
-            if (packageName == null) {
-                packageName = klazz.getPackage().getName();
+        } else if (TypesUtils.isString(type)) {
+            return CodeBlock.of("p.getText()");
+        } else if (types().isAssignable(type,
+                types().erasure(elements().getTypeElement(Enum.class.getCanonicalName()).asType()))) {
+            if (!deserializationConfig.isEnabled(DeserializationFeature.READ_ENUMS_USING_TO_STRING)) {
+                return CodeBlock.of("$T.valueOf(p.getText())", type);
             }
-            if (deserializerClassName == null) {
-                deserializerClassName = klazz.getSimpleName() + "Deserializer";
-            }
-            return new DeserializerGenerator<>(this);
         }
+        return CodeBlock.of("null");
+    }
+
+    private List<VariableElement> getEnumConstants(TypeMirror type) {
+        List<VariableElement> enumValues = new ArrayList<>();
+        for (Element e : elements().getAllMembers((TypeElement) types().asElement(type))) {
+            if (e.getKind() == ElementKind.ENUM_CONSTANT) {
+                enumValues.add((VariableElement) e);
+            }
+        }
+        return enumValues;
+    }
+
+    private JsonIgnoreProperties.Value getIgnoredProperties() {
+        JsonIgnoreProperties anno = typeElement.getAnnotation(JsonIgnoreProperties.class);
+        if (anno == null) {
+            return JsonIgnoreProperties.Value.empty();
+        }
+        return JsonIgnoreProperties.Value.from(anno);
+    }
+
+    private Elements elements() {
+        return processingEnv.getElementUtils();
+    }
+
+    private Types types() {
+        return processingEnv.getTypeUtils();
     }
 }
