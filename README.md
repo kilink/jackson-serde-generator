@@ -44,7 +44,7 @@ After running the AutoSerde annotation processor, we would end up with the follo
 
 ```java
 public class FooSerializer extends StdSerializer<Foo> {
-  public PojoSerializer() {
+  public FooSerializer() {
     super(Foo.class);
   }
 
@@ -66,11 +66,11 @@ public class FooSerializer extends StdSerializer<Foo> {
 And Deserializer:
 
 ```java
-public class PojoDeserializer extends StdDeserializer<Foo> {
+public class FooDeserializer extends StdDeserializer<Foo> {
   private static final boolean ignoreUnknown = true;
   private static final Set<String> ignored = Collections.emptySet();
 
-  public PojoDeserializer() {
+  public FooDeserializer() {
     super(Fooclass);
   }
 
