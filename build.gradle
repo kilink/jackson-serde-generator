@@ -12,8 +12,8 @@ targetCompatibility = 1.8
 dependencies {
   annotationProcessor "com.google.auto.service:auto-service:1.+"
 
-  api "com.fasterxml.jackson.core:jackson-annotations:2.10.+"
-  api "com.fasterxml.jackson.core:jackson-databind:2.10.+"
+  api "com.fasterxml.jackson.core:jackson-annotations:2.11.+"
+  api "com.fasterxml.jackson.core:jackson-databind:2.11.+"
 
   implementation "com.google.auto:auto-common:0.+"
   implementation "com.google.auto.service:auto-service-annotations:1.+"
