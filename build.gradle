@@ -23,6 +23,11 @@ dependencies {
   if (org.gradle.internal.jvm.Jvm.current().toolsJar != null) {
     testRuntimeOnly files(org.gradle.internal.jvm.Jvm.current().toolsJar)
   }
-  testImplementation "junit:junit:4.+"
+  testImplementation(platform('org.junit:junit-bom:5.7.+'))
+  testImplementation 'org.junit.jupiter:junit-jupiter'
   testImplementation "com.google.testing.compile:compile-testing:0.+"
+}
+
+test {
+    useJUnitPlatform()
 }
