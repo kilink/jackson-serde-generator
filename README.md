@@ -1,4 +1,8 @@
 # AutoSerde
+
+[![Build Status](https://travis-ci.com/kilink/jackson-serde-generator.svg?branch=master)](https://travis-ci.com/kilink/jackson-serde-generator)
+
+
 Code generator for Jackson Serializers / Deserializers.
 
 ## Why?
