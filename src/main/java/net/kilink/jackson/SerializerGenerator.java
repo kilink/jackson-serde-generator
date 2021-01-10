@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.SerializationConfig;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -356,7 +357,12 @@ public final class SerializerGenerator {
             PropertyNamingStrategy.LOWER_CAMEL_CASE,
             PropertyNamingStrategy.LOWER_DOT_CASE,
             PropertyNamingStrategy.SNAKE_CASE,
-            PropertyNamingStrategy.UPPER_CAMEL_CASE);
+            PropertyNamingStrategy.UPPER_CAMEL_CASE,
+            PropertyNamingStrategies.KEBAB_CASE,
+            PropertyNamingStrategies.LOWER_CAMEL_CASE,
+            PropertyNamingStrategies.LOWER_DOT_CASE,
+            PropertyNamingStrategies.SNAKE_CASE,
+            PropertyNamingStrategies.UPPER_CAMEL_CASE);
 
     private PropertyNamingStrategy getPropertyNamingStrategy() {
         TypeMirror jsonNaming = elements().getTypeElement(JsonNaming.class.getCanonicalName()).asType();
