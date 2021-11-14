@@ -12,8 +12,8 @@ targetCompatibility = 1.8
 dependencies {
   annotationProcessor "com.google.auto.service:auto-service:1.+"
 
-  api "com.fasterxml.jackson.core:jackson-annotations:2.12.+"
-  api "com.fasterxml.jackson.core:jackson-databind:2.12.+"
+  api "com.fasterxml.jackson.core:jackson-annotations:2.13.+"
+  api "com.fasterxml.jackson.core:jackson-databind:2.13.+"
 
   implementation "com.google.auto:auto-common:0.+"
   implementation "com.google.auto.service:auto-service-annotations:1.+"
@@ -23,7 +23,7 @@ dependencies {
   if (org.gradle.internal.jvm.Jvm.current().toolsJar != null) {
     testRuntimeOnly files(org.gradle.internal.jvm.Jvm.current().toolsJar)
   }
-  testImplementation(platform('org.junit:junit-bom:5.7.+'))
+  testImplementation(platform('org.junit:junit-bom:5.8.+'))
   testImplementation 'org.junit.jupiter:junit-jupiter'
   testImplementation "com.google.testing.compile:compile-testing:0.+"
 }
