@@ -27,7 +27,7 @@ public final class AnnotationProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         List<ClassName> generatedSerializers = new ArrayList<>();
-        List<ClassName> generatedDeserializers = new ArrayList<>();
+        List<DeserializerInfo> generatedDeserializers = new ArrayList<>();
 
         for (Element element : roundEnv.getElementsAnnotatedWith(AutoSerde.class)) {
             if (!element.getKind().isClass()) {
@@ -55,7 +55,9 @@ public final class AnnotationProcessor extends AbstractProcessor {
                 JavaFile sourceFile = generator.generate();
                 try {
                     sourceFile.writeTo(processingEnv.getFiler());
-                    generatedDeserializers.add(ClassName.get(sourceFile.packageName, sourceFile.typeSpec.name));
+                    generatedDeserializers.add(new DeserializerInfo(
+                            ClassName.get(typeElement),
+                            ClassName.get(sourceFile.packageName, sourceFile.typeSpec.name)));
                 } catch (IOException exc) {
                     messager().printMessage(
                             Diagnostic.Kind.ERROR,
@@ -69,11 +71,13 @@ public final class AnnotationProcessor extends AbstractProcessor {
             return false;
         }
 
-        ModuleGenerator moduleGenerator = ModuleGenerator.builder()
+        ModuleGenerator.Builder moduleGenerator = ModuleGenerator.builder()
                 .withModuleName(ClassName.get(DEFAULT_PACKAGE_NAME, DEFAULT_MODULE_NAME))
-                .withSerializers(generatedSerializers)
-                .build();
-        JavaFile sourceFile = moduleGenerator.generate();
+                .withSerializers(generatedSerializers);
+        for (DeserializerInfo info : generatedDeserializers) {
+            moduleGenerator.withDeserializer(info.className(), info.deserializer());
+        }
+        JavaFile sourceFile = moduleGenerator.build().generate();
         try {
             sourceFile.writeTo(processingEnv.getFiler());
         } catch (IOException exc) {
@@ -99,4 +103,6 @@ public final class AnnotationProcessor extends AbstractProcessor {
     public SourceVersion getSupportedSourceVersion() {
         return SourceVersion.latestSupported();
     }
+
+    private record DeserializerInfo(ClassName className, ClassName deserializer) {}
 }
