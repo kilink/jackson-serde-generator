@@ -6,6 +6,12 @@ repositories {
   mavenCentral()
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
 dependencies {
   annotationProcessor "com.google.auto.service:auto-service:1.+"
 
