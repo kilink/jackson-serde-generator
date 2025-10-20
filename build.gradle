@@ -3,11 +3,8 @@ plugins {
 }
 
 repositories {
-  jcenter()
+  mavenCentral()
 }
-
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
 
 dependencies {
   annotationProcessor "com.google.auto.service:auto-service:1.+"
@@ -26,6 +23,8 @@ dependencies {
   testImplementation(platform('org.junit:junit-bom:5.8.+'))
   testImplementation 'org.junit.jupiter:junit-jupiter'
   testImplementation "com.google.testing.compile:compile-testing:0.+"
+
+  testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 test {
