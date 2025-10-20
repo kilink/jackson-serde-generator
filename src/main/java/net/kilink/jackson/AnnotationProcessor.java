@@ -3,10 +3,6 @@ package net.kilink.jackson;
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
-import net.kilink.jackson.AutoSerde;
-import net.kilink.jackson.ModuleGenerator;
-import net.kilink.jackson.DeserializerGenerator;
-import net.kilink.jackson.SerializerGenerator;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Messager;
@@ -25,8 +21,8 @@ import java.util.Set;
 @AutoService(Processor.class)
 public final class AnnotationProcessor extends AbstractProcessor {
 
-    private final String defaultPackageName = "net.kilink.jackson";
-    private final String defaultModuleName = "GeneratedModule";
+    private static final String DEFAULT_PACKAGE_NAME = "net.kilink.jackson";
+    private static final String DEFAULT_MODULE_NAME = "GeneratedModule";
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -74,7 +70,7 @@ public final class AnnotationProcessor extends AbstractProcessor {
         }
 
         ModuleGenerator moduleGenerator = ModuleGenerator.builder()
-                .withModuleName(ClassName.get(defaultPackageName, defaultModuleName))
+                .withModuleName(ClassName.get(DEFAULT_PACKAGE_NAME, DEFAULT_MODULE_NAME))
                 .withSerializers(generatedSerializers)
                 .build();
         JavaFile sourceFile = moduleGenerator.generate();

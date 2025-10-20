@@ -8,6 +8,7 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
+import org.jspecify.annotations.Nullable;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -23,10 +24,10 @@ public final class ModuleGenerator {
     private final Collection<ClassName> serializers;
     private final Map<ClassName, ClassName> deserializers;
 
-    private ModuleGenerator(Builder builder) {
-        this.name = builder.moduleName;
-        this.serializers = builder.serializers;
-        this.deserializers = builder.deserializers;
+    private ModuleGenerator(ClassName name, Collection<ClassName> serializers, Map<ClassName, ClassName> deserializers) {
+        this.name = name;
+        this.serializers = serializers;
+        this.deserializers = deserializers;
     }
 
     public static Builder builder() {
@@ -60,6 +61,7 @@ public final class ModuleGenerator {
 
     public static final class Builder {
 
+        @Nullable
         private ClassName moduleName;
         private final List<ClassName> serializers = new ArrayList<>();
         private final Map<ClassName, ClassName> deserializers = new LinkedHashMap<>();
@@ -85,8 +87,10 @@ public final class ModuleGenerator {
         }
 
         public ModuleGenerator build() {
-            Objects.requireNonNull(moduleName);
-            return new ModuleGenerator(this);
+            return new ModuleGenerator(
+                    Objects.requireNonNull(moduleName),
+                    serializers,
+                    deserializers);
         }
     }
 }

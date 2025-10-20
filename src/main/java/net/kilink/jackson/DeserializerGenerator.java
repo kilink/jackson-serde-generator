@@ -33,8 +33,6 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -102,29 +100,17 @@ public final class DeserializerGenerator {
                     ParameterizedTypeName.get(Set.class, String.class),
                     "ignored",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                    .initializer("$T.emptySet()", Collections.class).build());
-        } else if (ignoreProperties.getIgnored().size() == 1) {
-            String singleProperty = ignoreProperties.getIgnored().iterator().next();
-            classSpec.addField(FieldSpec.builder(
-                    ParameterizedTypeName.get(Set.class, String.class),
-                    "ignored",
-                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                    .initializer("$T.singleton($S)", Collections.class, singleProperty).build());
+                    .initializer("$T.of()", Set.class).build());
         } else {
+            CodeBlock properties = ignoreProperties.getIgnored().stream()
+                    .map(property -> CodeBlock.of("$S", property))
+                    .collect(CodeBlock.joining(", "));
             classSpec.addField(FieldSpec.builder(
                     ParameterizedTypeName.get(Set.class, String.class),
                     "ignored",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                    .build());
-            CodeBlock.Builder staticInitializer = CodeBlock.builder()
-                    .addStatement("$T _ignoredProps = new $T<>()", ParameterizedTypeName.get(Set.class, String.class), LinkedHashSet.class);
-            for (String propertyName : ignoreProperties.getIgnored()) {
-                staticInitializer.addStatement("_ignoredProps.add($S)", propertyName);
-            }
-            staticInitializer.addStatement("ignored = $T.unmodifiableSet(_ignoredProps)", Collections.class);
-            classSpec.addStaticBlock(staticInitializer.build());
+                    .initializer("$T.of($L)", Set.class, properties).build());
         }
-
         classSpec.addMethod(buildDeserializeMethod());
         return classSpec.build();
     }
@@ -221,26 +207,17 @@ public final class DeserializerGenerator {
     private CodeBlock valueHandler(TypeMirror type) {
         if (TypesUtils.isPrimitive(type) || TypesUtils.isBoxedPrimitive(type)) {
             TypeKind kind = TypesUtils.isBoxedPrimitive(type) ? types().unboxedType(type).getKind() : type.getKind();
-            switch (kind) {
-                case BOOLEAN:
-                    return CodeBlock.of("p.getBooleanValue()");
-                case BYTE:
-                    return CodeBlock.of("p.getByteValue()");
-                case SHORT:
-                    return CodeBlock.of("p.getShortValue()");
-                case INT:
-                    return CodeBlock.of("p.getIntValue()");
-                case LONG:
-                    return CodeBlock.of("p.getLongValue()");
-                case CHAR:
-                    return CodeBlock.of("p.getCharValue()");
-                case FLOAT:
-                    return CodeBlock.of("p.getFloatValue()");
-                case DOUBLE:
-                    return CodeBlock.of("p.getDoubleValue()");
-                default:
-                    throw new AssertionError("Encountered unknown primitive type: " + type.getKind());
-            }
+            return switch (kind) {
+                case BOOLEAN -> CodeBlock.of("p.getBooleanValue()");
+                case BYTE -> CodeBlock.of("p.getByteValue()");
+                case SHORT -> CodeBlock.of("p.getShortValue()");
+                case INT -> CodeBlock.of("p.getIntValue()");
+                case LONG -> CodeBlock.of("p.getLongValue()");
+                case CHAR -> CodeBlock.of("p.getCharValue()");
+                case FLOAT -> CodeBlock.of("p.getFloatValue()");
+                case DOUBLE -> CodeBlock.of("p.getDoubleValue()");
+                default -> throw new AssertionError("Encountered unknown primitive type: " + type.getKind());
+            };
         } else if (TypesUtils.isString(type)) {
             return CodeBlock.of("p.getText()");
         } else if (types().isAssignable(type,

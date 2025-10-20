@@ -17,6 +17,7 @@ dependencies {
 
   api "com.fasterxml.jackson.core:jackson-annotations:2.19.+"
   api "com.fasterxml.jackson.core:jackson-databind:2.19.+"
+  api "org.jspecify:jspecify:1.+"
 
   implementation "com.google.auto:auto-common:1.2.+"
   implementation "com.google.auto.service:auto-service-annotations:1.1.+"

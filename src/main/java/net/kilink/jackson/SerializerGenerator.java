@@ -24,8 +24,8 @@ import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import org.checkerframework.javacutil.TypesUtils;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -41,16 +41,15 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import static net.kilink.jackson.Utils.immutableListOf;
-import static net.kilink.jackson.Utils.immutableSetOf;
 import static net.kilink.jackson.Utils.nameForGetter;
 
 public final class SerializerGenerator {
@@ -113,7 +112,7 @@ public final class SerializerGenerator {
                 .addParameter(ParameterSpec.builder(SerializerProvider.class, "provider").build())
                 .addStatement("gen.writeStartObject(value)");
 
-        List<Getter> getters = new LinkedList<>();
+        List<Getter> getters = new ArrayList<>();
 
         for (Element el : typeElement.getEnclosedElements()) {
             if (el.getKind() != ElementKind.METHOD || isIgnored(el)) {
@@ -142,15 +141,15 @@ public final class SerializerGenerator {
         PropertyNamingStrategy namingStrategy = getPropertyNamingStrategy();
 
         for (Getter getter : getters) {
-            String fieldName = getExplicitPropertyName(getter.getElement());
+            String fieldName = getExplicitPropertyName(getter.element());
             if (fieldName == null) {
-                fieldName = nameForGetter(getter.getAccessorType(), getter.getElement());
+                fieldName = nameForGetter(getter.accessorType(), getter.element());
                 if (fieldName != null) {
                     fieldName = namingStrategy.nameForField(serializationConfig, null, fieldName);
                 }
             }
 
-            JsonInclude.Value inclusion = getInclusion(getter.getElement());
+            JsonInclude.Value inclusion = getInclusion(getter.element());
 
             CodeBlock getValue = CodeBlock.of("value.$L()", getter.getName());
             CodeBlock genMethodCall = writeSerializedValue(getter.getReturnType(), getValue);
@@ -228,7 +227,7 @@ public final class SerializerGenerator {
                         .addStatement("gen.writeString($L.toString())", getValue)
                         .build();
             } else {
-                List<VariableElement> enumValues = new LinkedList<>();
+                List<VariableElement> enumValues = new ArrayList<>();
                 boolean hasAnyExplicitNames = false;
                 for (Element e : elements().getAllMembers((TypeElement) types().asElement(type))) {
                     if (e.getKind() == ElementKind.ENUM_CONSTANT) {
@@ -277,7 +276,7 @@ public final class SerializerGenerator {
         return false;
     }
 
-    private JsonInclude.Value getInclusion(Element element) {
+    private static JsonInclude.Value getInclusion(Element element) {
         JsonInclude anno = element.getAnnotation(JsonInclude.class);
         return (anno == null) ? JsonInclude.Value.empty() : JsonInclude.Value.construct(anno.value(), anno.content());
     }
@@ -314,45 +313,29 @@ public final class SerializerGenerator {
             value = value.withOverrides(JsonAutoDetect.Value.from(anno));
         }
 
-        JsonAutoDetect.Visibility visibility;
-        switch (accessorType) {
-            case FIELD:
-                visibility = value.getFieldVisibility();
-                break;
-            case GETTER:
-                visibility = value.getGetterVisibility();
-                break;
-            case IS_GETTER:
-                visibility = value.getIsGetterVisibility();
-                break;
-            case CREATOR:
-                visibility = value.getCreatorVisibility();
-                break;
-            default:
-                throw new IllegalArgumentException();
-        }
+        JsonAutoDetect.Visibility visibility = switch (accessorType) {
+            case FIELD -> value.getFieldVisibility();
+            case GETTER -> value.getGetterVisibility();
+            case IS_GETTER -> value.getIsGetterVisibility();
+            case CREATOR -> value.getCreatorVisibility();
+            default -> throw new IllegalArgumentException();
+        };
 
         Set<Modifier> modifiers = element.getModifiers();
 
         boolean packagePrivate = Collections.disjoint(modifiers,
-                immutableSetOf(Modifier.PUBLIC, Modifier.PRIVATE, Modifier.PROTECTED));
+                EnumSet.of(Modifier.PUBLIC, Modifier.PRIVATE, Modifier.PROTECTED));
         boolean packagePrivateVisible = packagePrivate && Objects.equals(className.packageName(),
                 elements().getPackageOf(element).getQualifiedName().toString());
 
-        switch (visibility) {
-            case ANY:
-            case NON_PRIVATE:
-                return modifiers.contains(Modifier.PUBLIC) || packagePrivateVisible;
-            case PROTECTED_AND_PUBLIC:
-            case PUBLIC_ONLY:
-                return modifiers.contains(Modifier.PUBLIC);
-            case NONE:
-            default:
-                return false;
-        }
+        return switch (visibility) {
+            case ANY, NON_PRIVATE -> modifiers.contains(Modifier.PUBLIC) || packagePrivateVisible;
+            case PROTECTED_AND_PUBLIC, PUBLIC_ONLY -> modifiers.contains(Modifier.PUBLIC);
+            default -> false;
+        };
     }
 
-    private final List<PropertyNamingStrategy> propertyNamingStrategies = immutableListOf(
+    private final List<PropertyNamingStrategy> propertyNamingStrategies = List.of(
             PropertyNamingStrategy.KEBAB_CASE,
             PropertyNamingStrategy.LOWER_CAMEL_CASE,
             PropertyNamingStrategy.LOWER_DOT_CASE,
@@ -392,28 +375,11 @@ public final class SerializerGenerator {
         return processingEnv.getTypeUtils();
     }
 
-    private static final class Getter {
-
-        private final PropertyAccessor accessorType;
-        private final ExecutableElement element;
-
-        private Getter(PropertyAccessor accessorType, ExecutableElement element) {
-            this.accessorType = accessorType;
-            this.element = element;
-        }
-
-        public PropertyAccessor getAccessorType() {
-            return accessorType;
-        }
-
-        public ExecutableElement getElement() {
-            return element;
-        }
+    private record Getter(PropertyAccessor accessorType, ExecutableElement element) {
 
         public String getName() {
             return element.getSimpleName().toString();
         }
-
         public TypeMirror getReturnType() {
             return element.getReturnType();
         }
