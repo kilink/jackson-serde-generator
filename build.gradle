@@ -18,15 +18,15 @@ dependencies {
   api "com.fasterxml.jackson.core:jackson-annotations:2.19.+"
   api "com.fasterxml.jackson.core:jackson-databind:2.19.+"
 
-  implementation "com.google.auto:auto-common:0.+"
-  implementation "com.google.auto.service:auto-service-annotations:1.+"
-  implementation "com.squareup:javapoet:1.+"
-  implementation "org.checkerframework:javacutil:3.+"
+  implementation "com.google.auto:auto-common:1.2.+"
+  implementation "com.google.auto.service:auto-service-annotations:1.1.+"
+  implementation "com.squareup:javapoet:1.13.+"
+  implementation "org.checkerframework:javacutil:3.51.+"
 
   if (org.gradle.internal.jvm.Jvm.current().toolsJar != null) {
     testRuntimeOnly files(org.gradle.internal.jvm.Jvm.current().toolsJar)
   }
-  testImplementation(platform('org.junit:junit-bom:6.+'))
+  testImplementation(platform('org.junit:junit-bom:6.0.+'))
   testImplementation 'org.junit.jupiter:junit-jupiter'
   testImplementation "com.google.testing.compile:compile-testing:0.+"
 
